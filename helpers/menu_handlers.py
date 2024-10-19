@@ -3,8 +3,14 @@ from telegram.constants import ParseMode
 from telegram.helpers import escape_markdown
 from telegram.ext import ContextTypes
 import asyncio
+import base58
+import logging
 
 from helpers.wallet_tracker import start_periodic_task, get_wallet_balance  # Import the tracking function
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Shared user data
 user_data = {}  # Stores data per user (chat_id)
@@ -138,27 +144,40 @@ async def receive_wallet_address(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Please send the wallet address followed by a name, separated by a space.")
         return
     wallet_address, wallet_name = parts
-    if len(wallet_address) == 44:  # Assuming Solana wallet addresses are 44 characters long
+    
+    logger.debug(f"Received wallet address: {wallet_address}")
+    
+    if is_valid_solana_address(wallet_address):
+        logger.debug("Wallet address is valid")
         if any(wallet['address'] == wallet_address for wallet in user['tracked_wallets']):
             escaped_wallet_name = escape_markdown(wallet_name, version=2)
             message = f"Wallet `{escaped_wallet_name}` is already in your tracking list\\."
             await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            # Don't uncheck the currently tracked wallet
-            # Add the new wallet with name and without changing the tracked wallet
             user['tracked_wallets'].append({
                 'address': wallet_address,
                 'name': wallet_name,
-                'checked': False  # Keep the current tracked wallet unchanged
+                'checked': False
             })
             escaped_wallet_name = escape_markdown(wallet_name, version=2)
             message = f"Wallet `{escaped_wallet_name}` added to tracking list\\."
             await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
-            # Show the main menu again
-            # Automatically show the 'View Tracked Wallets' window after adding a wallet
             await view_wallets(update, context)
     else:
+        logger.debug("Wallet address is invalid")
         await update.message.reply_text("Invalid wallet address. Please try again.")
+
+def is_valid_solana_address(address: str) -> bool:
+    try:
+        # Decode the base58 address
+        decoded = base58.b58decode(address)
+        # Check if the decoded address is 32 bytes long
+        is_valid = len(decoded) == 32
+        logger.debug(f"Address validation result: {is_valid}")
+        return is_valid
+    except Exception as e:
+        logger.error(f"Error validating address: {str(e)}")
+        return False
 
 # Modify 'view_wallets' to display wallet names with checkmarks
 async def view_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -331,6 +350,8 @@ async def track_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = update.effective_chat.id
     user = user_data.get(chat_id, {'tracked_wallets': []})
     
+    logger.debug(f"Received track command: {update.message.text}")
+    
     if not context.args or len(context.args) < 2:
         await update.message.reply_text("Please provide a wallet address and a name. Usage: /track <wallet_address> <wallet_name>")
         return
@@ -338,25 +359,40 @@ async def track_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     wallet_address = context.args[0]
     wallet_name = ' '.join(context.args[1:])  # Join all remaining words as the wallet name
     
-    if len(wallet_address) != 44:  # Assuming Solana wallet addresses are 44 characters long
+    logger.debug(f"Parsed wallet address: {wallet_address}")
+    logger.debug(f"Parsed wallet name: {wallet_name}")
+
+    if is_valid_solana_address(wallet_address):
+        if any(wallet['address'] == wallet_address for wallet in user['tracked_wallets']):
+            await update.message.reply_text(f"Wallet {wallet_address} is already being tracked.")
+            return
+
+        user['tracked_wallets'].append({
+            'address': wallet_address,
+            'name': wallet_name,
+            'checked': False
+        })
+        user_data[chat_id] = user
+
+        escaped_wallet_name = escape_markdown(wallet_name, version=2)
+        escaped_wallet_address = escape_markdown(wallet_address, version=2)
+        message = f"Wallet `{escaped_wallet_name}` with address `{escaped_wallet_address}` added to tracking list\\."
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        logger.debug(f"Invalid wallet address: {wallet_address}")
         await update.message.reply_text("Invalid wallet address. Please try again.")
-        return
 
-    if any(wallet['address'] == wallet_address for wallet in user['tracked_wallets']):
-        await update.message.reply_text(f"Wallet {wallet_address} is already being tracked.")
-        return
-
-    user['tracked_wallets'].append({
-        'address': wallet_address,
-        'name': wallet_name,
-        'checked': False
-    })
-    user_data[chat_id] = user
-
-    escaped_wallet_name = escape_markdown(wallet_name, version=2)
-    escaped_wallet_address = escape_markdown(wallet_address, version=2)
-    message = f"Wallet `{escaped_wallet_name}` with address `{escaped_wallet_address}` added to tracking list\\."
-    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+def is_valid_solana_address(address: str) -> bool:
+    try:
+        # Decode the base58 address
+        decoded = base58.b58decode(address)
+        # Check if the decoded address is 32 bytes long
+        is_valid = len(decoded) == 32
+        logger.debug(f"Address validation result: {is_valid}")
+        return is_valid
+    except Exception as e:
+        logger.error(f"Error validating address: {str(e)}")
+        return False
 
 async def list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id

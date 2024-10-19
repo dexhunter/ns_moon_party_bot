@@ -5,3 +5,4 @@ pytz==2024.1
 cachetools==4.2.2
 requests==2.31.0
 beautifulsoup4==4.12.3
+base58==2.1.1
