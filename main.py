@@ -12,8 +12,9 @@ from helpers.menu_handlers import (
     toggle_wallet,
     back_to_main_menu,
     user_data,
-    track_wallet,  # New handler
-    list_wallets,  # New handler
+    track_wallet,
+    list_wallets,
+    delete_wallet,  # New import
 )
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -26,6 +27,18 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
+async def list_commands(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    commands = [
+        "/start - Start the bot and show the main menu",
+        "/menu - Show the main menu",
+        "/track <wallet_address> <wallet_name> - Add a new wallet to track",
+        "/listall - List all tracked wallets",
+        "/del <wallet_address_or_name> - Delete a tracked wallet",
+        "/list - Show this list of commands"
+    ]
+    message = "Available commands:\n\n" + "\n".join(commands)
+    await update.message.reply_text(message)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if message.text and message.text.startswith('/'):
@@ -33,14 +46,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         command = message.text.split()[0].lower()
         if command == '/track':
             await track_wallet(update, context)
-        elif command in ['/listall', '/list']:
+        elif command == '/listall':
             await list_wallets(update, context)
+        elif command == '/list':
+            await list_commands(update, context)
         elif command == '/menu':
             await show_main_menu(update, context)
+        elif command == '/del':
+            await delete_wallet(update, context)
         # Add other commands as needed
     elif message.text and context.bot.username and f'@{context.bot.username}' in message.text:
         # The bot was tagged, but no specific command was given
-        await message.reply_text("Hello! I'm here to help. Please use a specific command like /track, /list, or /menu.")
+        await message.reply_text("Hello! I'm here to help. Use /list to see available commands.")
     else:
         # The message doesn't contain a command and the bot wasn't tagged, so we ignore it
         return
@@ -53,7 +70,8 @@ def main():
     application.add_handler(CommandHandler("menu", show_main_menu))
     application.add_handler(CommandHandler("track", track_wallet))
     application.add_handler(CommandHandler("listall", list_wallets))
-    application.add_handler(CommandHandler("list", list_wallets))
+    application.add_handler(CommandHandler("list", list_commands))
+    application.add_handler(CommandHandler("del", delete_wallet))  # New command handler
 
     # Callback query handlers
     application.add_handler(CallbackQueryHandler(main_menu_handler, pattern='^(add_wallet|view_wallets|start_tracking|back_to_main)$'))

@@ -384,3 +384,34 @@ async def list_wallets(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             balance_str = f"{balance:.4f} SOL" if balance is not None else "Error fetching balance"
             message += f"Name: {wallet['name']}\nAddress: {wallet['address']}\nBalance: {balance_str}\n\n"
         await update.message.reply_text(message)
+
+async def delete_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    user = user_data.get(chat_id, {'tracked_wallets': []})
+    
+    if not context.args:
+        await update.message.reply_text("Please provide a wallet address or name to delete. Usage: /del <wallet_address_or_name>")
+        return
+
+    wallet_identifier = ' '.join(context.args)  # Join all args in case it's a multi-word name
+    
+    # Find the wallet to delete
+    wallet_to_delete = next((w for w in user['tracked_wallets'] if w['address'] == wallet_identifier or w['name'].lower() == wallet_identifier.lower()), None)
+    
+    if not wallet_to_delete:
+        await update.message.reply_text(f"No wallet found with address or name: {wallet_identifier}")
+        return
+
+    # Remove the wallet
+    user['tracked_wallets'].remove(wallet_to_delete)
+    
+    # Cancel any tracking tasks for this wallet
+    task = user['tasks'].get(wallet_to_delete['address'])
+    if task:
+        task.cancel()
+        del user['tasks'][wallet_to_delete['address']]
+
+    escaped_wallet_name = escape_markdown(wallet_to_delete['name'], version=2)
+    escaped_wallet_address = escape_markdown(wallet_to_delete['address'], version=2)
+    message = f"Wallet `{escaped_wallet_name}` with address `{escaped_wallet_address}` has been removed from the tracking list\\."
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
